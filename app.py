@@ -7,7 +7,9 @@ from scipy.sparse import hstack
 app = Flask(__name__)
 CORS(app)
 
-with open('models/spam_detector_final.pkl', 'rb') as f:
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, 'models', 'spam_detector_final.pkl')
+with open(MODEL_PATH, 'rb') as f:
     MODEL = pickle.load(f)
 
 clf    = MODEL['clf']
@@ -117,4 +119,4 @@ def health():
     return jsonify({'status': 'ok', 'model': MODEL.get('model_name')})
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
