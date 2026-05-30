@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>SENTINEL — AI Spam Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --r:#ff2040;--g:#00e87a;--b:#00d4ff;--o:#ff8c00;--p:#9b4dff;
+  --dark:#04060a;--d1:#080c12;--d2:#0d1420;--d3:#111c2e;
+  --glass:rgba(8,15,28,0.92);--border:rgba(0,180,255,0.12);
+  --text:#e8f0ff;--muted:rgba(200,215,255,0.45);--dim:rgba(200,215,255,0.2);
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--dark)}
+#root{width:100%;height:100%;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Space Grotesk',sans-serif;color:var(--text)}
+
+#canvas{position:fixed;inset:0;z-index:0}
+
+#root::before{content:'';position:fixed;inset:0;z-index:1;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events:none;opacity:0.5}
+
+#root::after{content:'';position:fixed;inset:0;z-index:1;
+  background:linear-gradient(rgba(0,212,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.025) 1px,transparent 1px);
+  background-size:48px 48px;pointer-events:none}
+
+#layout{position:relative;z-index:10;width:100%;height:100vh;display:grid;grid-template-columns:320px 1fr;grid-template-rows:1fr;overflow:hidden}
+
+/* SIDEBAR */
+#sidebar{display:flex;flex-direction:column;background:var(--glass);border-right:1px solid var(--border);backdrop-filter:blur(24px);overflow:hidden;position:relative}
+#sidebar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--b),transparent)}
+
+.sb-head{padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.brand-icon{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,rgba(0,212,255,0.2),rgba(155,77,255,0.2));border:1px solid rgba(0,212,255,0.3);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.brand-name{font-family:'Syne',sans-serif;font-weight:800;font-size:16px;letter-spacing:1px;background:linear-gradient(90deg,var(--b),var(--p));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.brand-sub{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);margin-top:2px}
+.status-row{display:flex;align-items:center;gap:6px;margin-top:8px}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--g);box-shadow:0 0 8px var(--g);animation:blink 2s infinite}
+.status-txt{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--g);letter-spacing:1.5px}
+
+.inbox-label{padding:12px 20px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--dim);flex-shrink:0}
+.inbox{flex:1;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:4px}
+.inbox::-webkit-scrollbar{width:3px}
+.inbox::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.2);border-radius:2px}
+.msg-item{padding:10px 12px;border-radius:8px;border:1px solid transparent;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden;flex-shrink:0}
+.msg-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;border-radius:2px}
+.msg-item.spam::before{background:var(--r)}
+.msg-item.ham::before{background:var(--g)}
+.msg-item:hover,.msg-item.active{background:rgba(0,212,255,0.06);border-color:rgba(0,212,255,0.15)}
+.msg-item.active{background:rgba(0,212,255,0.1);border-color:rgba(0,212,255,0.2)}
+.msg-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+.msg-sender{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.msg-badge{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 6px;border-radius:3px;flex-shrink:0;letter-spacing:0.5px}
+.msg-badge.spam{background:rgba(255,32,64,0.15);color:var(--r);border:1px solid rgba(255,32,64,0.3)}
+.msg-badge.ham{background:rgba(0,232,122,0.1);color:var(--g);border:1px solid rgba(0,232,122,0.25)}
+.msg-preview{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.msg-time{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--dim);margin-top:3px}
+
+.sb-stats{padding:12px 20px;border-top:1px solid var(--border);flex-shrink:0;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.sb-stat{text-align:center}
+.sb-stat-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;line-height:1}
+.sb-stat-val.spam{color:var(--r)}
+.sb-stat-val.ham{color:var(--g)}
+.sb-stat-val.total{color:var(--b)}
+.sb-stat-lbl{font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:1.5px;color:var(--dim);margin-top:3px}
+
+/* MAIN PANEL */
+#main{display:flex;flex-direction:column;overflow:hidden;background:rgba(4,6,10,0.6);backdrop-filter:blur(12px)}
+
+#topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);flex-shrink:0;gap:12px}
+.topbar-left{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.topbar-icon{width:32px;height:32px;border-radius:6px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.topbar-title{font-family:'Syne',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-sub{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);margin-top:1px;letter-spacing:0.5px}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.tbr-chip{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:1px;padding:4px 8px;border-radius:4px;border:1px solid var(--border);color:var(--muted)}
+#clock-chip{color:var(--b);border-color:rgba(0,212,255,0.2);background:rgba(0,212,255,0.05)}
+
+#compose-area{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+#compose-area::-webkit-scrollbar{width:4px}
+#compose-area::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.15);border-radius:2px}
+
+.email-fields{display:flex;flex-direction:column;gap:1px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:rgba(8,15,28,0.8)}
+.email-field{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid rgba(0,212,255,0.06)}
+.email-field:last-child{border-bottom:none}
+.ef-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;color:var(--dim);width:44px;flex-shrink:0}
+.ef-val{font-size:12px;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ef-badge{font-family:'JetBrains Mono',monospace;font-size:7px;padding:2px 6px;border-radius:3px;background:rgba(0,232,122,0.1);color:var(--g);border:1px solid rgba(0,232,122,0.2);flex-shrink:0}
+
+.compose-wrapper{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:rgba(8,15,28,0.8);flex:1;display:flex;flex-direction:column;min-height:180px}
+.cw-head{padding:10px 16px;border-bottom:1px solid rgba(0,212,255,0.06);display:flex;align-items:center;justify-content:space-between}
+.cw-head-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted)}
+.cw-counter{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim)}
+textarea#msgInput{flex:1;width:100%;background:transparent;border:none;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.9;padding:14px 16px;resize:none;outline:none;min-height:140px}
+textarea#msgInput::placeholder{color:var(--dim)}
+
+#action-bar{display:flex;align-items:center;gap:10px;padding:12px 24px;border-top:1px solid var(--border);flex-shrink:0;background:rgba(4,6,10,0.8)}
+.examples-wrap{display:flex;gap:6px;flex:1;flex-wrap:wrap;overflow:hidden;max-height:26px}
+.ex-pill{font-family:'JetBrains Mono',monospace;font-size:9px;padding:4px 10px;border-radius:4px;cursor:pointer;transition:all 0.2s;border:1px solid;white-space:nowrap;letter-spacing:0.3px;flex-shrink:0}
+.ex-pill.sp{border-color:rgba(255,32,64,0.3);color:rgba(255,100,120,0.9)}
+.ex-pill.sp:hover{background:rgba(255,32,64,0.12);border-color:rgba(255,32,64,0.5)}
+.ex-pill.hm{border-color:rgba(0,232,122,0.25);color:rgba(0,232,122,0.9)}
+.ex-pill.hm:hover{background:rgba(0,232,122,0.08);border-color:rgba(0,232,122,0.4)}
+#scan-btn{padding:9px 22px;border-radius:7px;border:1px solid rgba(0,212,255,0.5);background:rgba(0,212,255,0.08);color:var(--b);font-family:'Syne',sans-serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;transition:all 0.25s;white-space:nowrap;flex-shrink:0;position:relative;overflow:hidden}
+#scan-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(155,77,255,0.1));opacity:0;transition:opacity 0.3s}
+#scan-btn:hover{border-color:var(--b);box-shadow:0 0 24px rgba(0,212,255,0.25),inset 0 0 20px rgba(0,212,255,0.05);color:#fff}
+#scan-btn:hover::before{opacity:1}
+#scan-btn:disabled{opacity:0.4;cursor:not-allowed;pointer-events:none}
+
+/* RESULT PANEL */
+#result-panel{display:none;flex-direction:column;gap:14px}
+
+.verdict-hero{border-radius:12px;padding:20px;position:relative;overflow:hidden;border:1px solid}
+.vh-glow{position:absolute;top:-40px;right:-40px;width:160px;height:160px;border-radius:50%;filter:blur(60px);opacity:0.3;pointer-events:none}
+.vh-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.vh-badge{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:2px;padding:4px 10px;border-radius:4px}
+.vh-time{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--muted)}
+.vh-main{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.vh-icon{font-size:36px;flex-shrink:0}
+.vh-text{flex:1;min-width:0}
+.vh-verdict{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(20px,4vw,32px);line-height:1;letter-spacing:-0.5px}
+.vh-sub{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+.conf-ring{flex-shrink:0;position:relative;width:72px;height:72px}
+.conf-ring svg{transform:rotate(-90deg)}
+.conf-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.conf-pct{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;line-height:1}
+.conf-lbl{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--muted);letter-spacing:1px;margin-top:1px}
+.verdict-hero.spam{border-color:rgba(255,32,64,0.3);background:linear-gradient(135deg,rgba(255,32,64,0.07),rgba(255,32,64,0.02))}
+.verdict-hero.spam .vh-glow{background:var(--r)}
+.verdict-hero.spam .vh-badge{background:rgba(255,32,64,0.15);color:var(--r);border:1px solid rgba(255,32,64,0.3)}
+.verdict-hero.spam .vh-verdict{color:var(--r)}
+.verdict-hero.ham{border-color:rgba(0,232,122,0.25);background:linear-gradient(135deg,rgba(0,232,122,0.06),rgba(0,232,122,0.01))}
+.verdict-hero.ham .vh-glow{background:var(--g)}
+.verdict-hero.ham .vh-badge{background:rgba(0,232,122,0.1);color:var(--g);border:1px solid rgba(0,232,122,0.25)}
+.verdict-hero.ham .vh-verdict{color:var(--g)}
+
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat-card{background:rgba(8,15,28,0.8);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;transition:border-color 0.2s}
+.stat-card:hover{border-color:rgba(0,212,255,0.2)}
+.stat-lbl{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px}
+.stat-val{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;line-height:1}
+.stat-bar{height:2px;background:rgba(255,255,255,0.05);border-radius:1px;margin-top:8px;overflow:hidden}
+.stat-bar-fill{height:100%;border-radius:1px;width:0%;transition:width 1s cubic-bezier(.34,1.56,.64,1)}
+
+.prob-section{display:flex;flex-direction:column;gap:10px}
+.prob-row{background:rgba(8,15,28,0.8);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px 14px}
+.prob-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.prob-name{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;display:flex;align-items:center;gap:6px}
+.prob-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.prob-pct{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700}
+.prob-track{height:5px;background:rgba(255,255,255,0.04);border-radius:3px;overflow:hidden}
+.prob-fill{height:100%;border-radius:3px;width:0%;transition:width 1.2s cubic-bezier(.34,1.56,.64,1)}
+.prob-fill.sf{background:linear-gradient(90deg,rgba(255,32,64,0.5),var(--r));box-shadow:0 0 10px rgba(255,32,64,0.4)}
+.prob-fill.hf{background:linear-gradient(90deg,rgba(0,232,122,0.4),var(--g));box-shadow:0 0 10px rgba(0,232,122,0.3)}
+
+.signals-section{background:rgba(8,15,28,0.8);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px}
+.sig-head{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:2px;color:var(--dim);margin-bottom:10px}
+.sig-grid{display:flex;flex-wrap:wrap;gap:6px}
+.sig-tag{font-family:'JetBrains Mono',monospace;font-size:9px;padding:4px 10px;border-radius:4px;border:1px solid;letter-spacing:0.5px}
+.sig-w{background:rgba(255,32,64,0.08);color:rgba(255,100,130,0.9);border-color:rgba(255,32,64,0.25)}
+.sig-o{background:rgba(0,232,122,0.07);color:rgba(0,220,118,0.9);border-color:rgba(0,232,122,0.2)}
+.sig-i{background:rgba(0,212,255,0.07);color:rgba(0,200,240,0.9);border-color:rgba(0,212,255,0.18)}
+.no-sig{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+
+.analysis-block{background:rgba(8,15,28,0.8);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px}
+.ab-head{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:2px;color:var(--dim);margin-bottom:8px}
+.ab-text{font-size:11px;line-height:1.75;color:rgba(200,215,255,0.7)}
+
+/* LOADING */
+#loading-panel{display:none;align-items:center;justify-content:center;flex-direction:column;gap:20px;padding:40px;flex:1}
+.scan-anim{position:relative;width:100px;height:100px}
+.scan-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;border:1px solid}
+.sr1{width:90px;height:90px;border-color:rgba(0,212,255,0.4);animation:spin 2s linear infinite}
+.sr2{width:66px;height:66px;border-color:rgba(155,77,255,0.35);animation:spin 1.5s linear infinite reverse}
+.sr3{width:44px;height:44px;border-color:rgba(255,32,64,0.3);animation:spin 1s linear infinite}
+.scan-core{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:rgba(0,212,255,0.9);box-shadow:0 0 20px var(--b);animation:pulse 1s ease-in-out infinite}
+.scan-labels{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--b);letter-spacing:2px;text-align:center}
+.scan-dots::after{content:'';animation:dots 1.5s steps(4,end) infinite}
+
+/* MOBILE */
+#mob-overlay{display:none;position:fixed;inset:0;background:rgba(4,6,10,0.95);z-index:100;flex-direction:column}
+#mob-sb{width:100%;overflow-y:auto;display:flex;flex-direction:column;padding:0 12px 12px}
+#mob-close{display:flex;align-items:center;justify-content:space-between;padding:14px 8px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+.mob-title{font-family:'Syne',sans-serif;font-weight:700;font-size:14px}
+.mob-x{background:none;border:1px solid var(--border);color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 10px;border-radius:5px;cursor:pointer}
+
+#mob-toggle{display:none;align-items:center;gap:6px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);color:var(--b);padding:5px 10px;border-radius:5px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px}
+
+@media(max-width:768px){
+  #layout{grid-template-columns:1fr;display:block}
+  #sidebar{display:none}
+  #main{height:100dvh;display:flex;flex-direction:column}
+  #topbar{padding:10px 14px}
+  #compose-area{padding:12px 14px}
+  #action-bar{padding:10px 14px;flex-wrap:wrap;gap:8px}
+  .examples-wrap{max-height:none;order:2;width:100%}
+  #scan-btn{order:1;width:100%}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .vh-verdict{font-size:22px}
+  .vh-icon{font-size:28px}
+  .topbar-right .tbr-chip:not(#clock-chip){display:none}
+  #mob-toggle{display:flex!important}
+}
+
+@keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+@keyframes pulse{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:1}50%{transform:translate(-50%,-50%) scale(1.4);opacity:0.6}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}100%{content:''}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes tagIn{from{opacity:0;transform:scale(0.85)}to{opacity:1;transform:scale(1)}}
+
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.2);border-radius:2px}
+</style>
+</head>
+<body>
+<div id="root">
+<canvas id="canvas"></canvas>
+
+<!-- Mobile Inbox Overlay -->
+<div id="mob-overlay">
+  <div id="mob-sb">
+    <div id="mob-close">
+      <span class="mob-title">📥 Inbox</span>
+      <button class="mob-x" onclick="closeMobOverlay()">CLOSE</button>
+    </div>
+    <div id="mob-inbox-list"></div>
+  </div>
+</div>
+
+<div id="layout">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sb-head">
+      <div class="brand">
+        <div class="brand-icon">🛡</div>
+        <div>
+          <div class="brand-name">SENTINEL</div>
+          <div class="brand-sub">AI SPAM INTELLIGENCE v3.0</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div class="status-dot"></div>
+        <div class="status-txt">NEURAL ENGINE · ONLINE</div>
+      </div>
+    </div>
+    <div class="inbox-label">// RECENT SCANS</div>
+    <div class="inbox" id="inboxList"></div>
+    <div class="sb-stats">
+      <div class="sb-stat"><div class="sb-stat-val spam" id="spamCount">0</div><div class="sb-stat-lbl">SPAM</div></div>
+      <div class="sb-stat"><div class="sb-stat-val ham" id="hamCount">0</div><div class="sb-stat-lbl">CLEAN</div></div>
+      <div class="sb-stat"><div class="sb-stat-val total" id="totalCount">0</div><div class="sb-stat-lbl">TOTAL</div></div>
+    </div>
+  </div>
+
+  <!-- Main Panel -->
+  <div id="main">
+    <div id="topbar">
+      <div class="topbar-left">
+        <button id="mob-toggle" onclick="openMobOverlay()">📥 INBOX</button>
+        <div class="topbar-icon">✉️</div>
+        <div>
+          <div class="topbar-title">New Message Analysis</div>
+          <div class="topbar-sub">Compose or paste a message to scan</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="tbr-chip">MOOD_AI</div>
+        <div class="tbr-chip" id="clock-chip">--:--:--</div>
+      </div>
+    </div>
+
+    <div id="compose-area">
+      <div class="email-fields">
+        <div class="email-field">
+          <div class="ef-label">FROM</div>
+          <div class="ef-val" id="ef-from">unknown@sender.net</div>
+          <div class="ef-badge" id="ef-from-badge">UNVERIFIED</div>
+        </div>
+        <div class="email-field">
+          <div class="ef-label">TO</div>
+          <div class="ef-val">you@sentinel.ai</div>
+        </div>
+        <div class="email-field">
+          <div class="ef-label">SUBJ</div>
+          <div class="ef-val" id="ef-subject">—</div>
+        </div>
+      </div>
+
+      <div class="compose-wrapper">
+        <div class="cw-head">
+          <div class="cw-head-label">// MESSAGE BODY</div>
+          <div class="cw-counter" id="cw-counter">0 chars · 0 words</div>
+        </div>
+        <textarea id="msgInput" placeholder="Paste or type any email, SMS, or message here for deep AI threat analysis...&#10;&#10;Examples: promotional emails, suspicious texts, phishing attempts, or legitimate messages." spellcheck="false"></textarea>
+      </div>
+
+      <div id="loading-panel">
+        <div class="scan-anim">
+          <div class="scan-ring sr1"></div>
+          <div class="scan-ring sr2"></div>
+          <div class="scan-ring sr3"></div>
+          <div class="scan-core"></div>
+        </div>
+        <div class="scan-labels"><span class="scan-dots" id="loadTxt">ANALYZING</span></div>
+      </div>
+
+      <div id="result-panel"></div>
+    </div>
+
+    <div id="action-bar">
+      <div class="examples-wrap">
+        <button class="ex-pill sp" onclick="loadEx('WIN a FREE iPhone NOW!! Click to CLAIM your $5000 PRIZE!! Limited offer!!!','prize@win-now.biz','🏆 YOU HAVE BEEN SELECTED!!!')">⚠ PRIZE SCAM</button>
+        <button class="ex-pill sp" onclick="loadEx('URGENT: Your account has been BLOCKED. Verify immediately at http://fake-bank.xyz or lose access FOREVER','security@bankoffers.ru','⚠️ Account Blocked - Immediate Action Required')">⚠ PHISHING</button>
+        <button class="ex-pill sp" onclick="loadEx('CONGRATULATIONS! You won $10,000 in our lottery! Send your bank details to claim. Act NOW before expiry!','no-reply@lottery-winner.info','💰 YOU WON THE LOTTERY')">⚠ LOTTERY</button>
+        <button class="ex-pill hm" onclick="loadEx('Hi Sarah, are we still on for lunch tomorrow at 1pm? Let me know if anything changes. Thanks!','alex.chen@gmail.com','Re: Lunch tomorrow')">✓ PERSONAL</button>
+        <button class="ex-pill hm" onclick="loadEx('Please find attached the Q3 financial report. The board meeting is scheduled for Thursday at 2pm. Best regards, Michael','m.johnson@acmecorp.com','Q3 Financial Report - Board Meeting')">✓ BUSINESS</button>
+        <button class="ex-pill hm" onclick="loadEx('Your appointment with Dr. Chen is confirmed for Monday, June 2nd at 10:00 AM. Please bring your insurance card and arrive 10 minutes early.','appointments@citymedical.org','Appointment Confirmation - Dr. Chen')">✓ APPT</button>
+      </div>
+      <button id="scan-btn" onclick="runScan()">⬡ SCAN MESSAGE</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ── Particle canvas ───────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, particles = [];
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W; this.y = Math.random() * H;
+    this.vx = (Math.random()-0.5)*0.3; this.vy = (Math.random()-0.5)*0.3;
+    this.r = Math.random()*1.2+0.3; this.life = Math.random();
+    this.speed = Math.random()*0.005+0.002;
+    const t = Math.random();
+    this.color = t<0.4?[0,212,255]:t<0.7?[155,77,255]:[0,232,122];
+  }
+  update() {
+    this.x+=this.vx; this.y+=this.vy; this.life+=this.speed;
+    if(this.x<0||this.x>W||this.y<0||this.y>H) this.reset();
+    if(this.life>1) this.life=0;
+  }
+  draw() {
+    const a = Math.sin(this.life*Math.PI)*0.6;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${this.color[0]},${this.color[1]},${this.color[2]},${a})`;
+    ctx.fill();
+  }
+}
+
+for(let i=0;i<120;i++) particles.push(new Particle());
+let mouseX=400, mouseY=300;
+document.addEventListener('mousemove',e=>{mouseX=e.clientX;mouseY=e.clientY;});
+
+function drawFrame() {
+  ctx.clearRect(0,0,W,H);
+  const t = Date.now()*0.0001;
+  ctx.strokeStyle='rgba(0,212,255,0.03)';
+  ctx.lineWidth=0.5;
+  for(let i=0;i<8;i++){
+    const y=((i/8+t)%1)*H;
+    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+  }
+  particles.forEach(p=>{p.update();p.draw();});
+  const mg=ctx.createRadialGradient(mouseX,mouseY,0,mouseX,mouseY,200);
+  mg.addColorStop(0,'rgba(0,212,255,0.04)');mg.addColorStop(1,'transparent');
+  ctx.fillStyle=mg;ctx.fillRect(0,0,W,H);
+  const sl=(Date.now()*0.06)%H;
+  const slg=ctx.createLinearGradient(0,sl-60,0,sl+2);
+  slg.addColorStop(0,'transparent');slg.addColorStop(0.8,'rgba(0,212,255,0.025)');slg.addColorStop(1,'rgba(0,212,255,0.06)');
+  ctx.fillStyle=slg;ctx.fillRect(0,sl-60,W,62);
+  requestAnimationFrame(drawFrame);
+}
+drawFrame();
+
+// ── Clock ─────────────────────────────────────────────────────────
+function tick() {
+  const n = new Date();
+
+  document.getElementById('clock-chip').textContent =
+    n.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour12: false
+    }) + ' IST';
+}
+
+setInterval(tick, 1000);
+tick();
+
+// ── Counter ───────────────────────────────────────────────────────
+const msgInput=document.getElementById('msgInput');
+msgInput.addEventListener('input',()=>{
+  const v=msgInput.value;
+  const w=v.trim()?v.trim().split(/\s+/).length:0;
+  document.getElementById('cw-counter').textContent=`${v.length} chars · ${w} words`;
+  const lines=v.split('\n');
+  const first=lines[0]||'—';
+  document.getElementById('ef-subject').textContent=first.length>60?first.slice(0,60)+'…':(first||'—');
+});
+msgInput.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter') runScan();});
+
+// ── Load example ──────────────────────────────────────────────────
+function loadEx(msg,from,subj){
+  msgInput.value=msg;msgInput.dispatchEvent(new Event('input'));
+  if(from) document.getElementById('ef-from').textContent=from;
+  if(subj) document.getElementById('ef-subject').textContent=subj;
+  document.getElementById('result-panel').style.display='none';
+  document.getElementById('result-panel').innerHTML='';
+}
+
+// ── Inbox state ───────────────────────────────────────────────────
+let scans=[],spamC=0,hamC=0;
+function addToInbox(text,result){
+  const preview=text.slice(0,55)+(text.length>55?'…':'');
+  const sender=document.getElementById('ef-from').textContent;
+  const isSpam=result.prediction==='spam';
+  if(isSpam) spamC++;else hamC++;
+  scans.unshift({preview,sender,isSpam,time:new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})});
+  if(scans.length>20) scans.pop();
+  renderInbox();
+  document.getElementById('spamCount').textContent=spamC;
+  document.getElementById('hamCount').textContent=hamC;
+  document.getElementById('totalCount').textContent=scans.length;
+}
+
+function renderInbox(){
+  const html=scans.map((s,i)=>`
+    <div class="msg-item ${s.isSpam?'spam':'ham'} ${i===0?'active':''}">
+      <div class="msg-top"><div class="msg-sender">${s.sender}</div><div class="msg-badge ${s.isSpam?'spam':'ham'}">${s.isSpam?'SPAM':'CLEAN'}</div></div>
+      <div class="msg-preview">${s.preview}</div>
+      <div class="msg-time">${s.time}</div>
+    </div>`).join('');
+  const empty='<div style="padding:12px 8px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--dim)">No scans yet...</div>';
+  document.getElementById('inboxList').innerHTML=html||empty;
+  const ml=document.getElementById('mob-inbox-list');
+  if(ml) ml.innerHTML=html||empty;
+}
+
+function openMobOverlay(){renderInbox();document.getElementById('mob-overlay').style.display='flex';}
+function closeMobOverlay(){document.getElementById('mob-overlay').style.display='none';}
+
+// ── Signal detection ──────────────────────────────────────────────
+const SPAM_KW=['free','win','winner','prize','claim','cash','urgent','congratulations','selected','click here','limited offer','guarantee','earn money','bitcoin','crypto','lottery','jackpot','reward','gift','discount','promo','subscribe','verify','confirm','password','account','bank','transfer','wire'];
+function detectSignals(text){
+  const s=[],l=text.toLowerCase();
+  if(/https?:\/\/|www\./i.test(text)) s.push({t:'⚠ URL DETECTED',c:'sig-w'});
+  if(/[\$£€]\s*\d+/i.test(text)) s.push({t:'⚠ CURRENCY PATTERN',c:'sig-w'});
+  if(/\b\d{10,}\b/.test(text)) s.push({t:'⚠ PHONE NUMBER',c:'sig-w'});
+  const upper=(text.match(/[A-Z]/g)||[]).length/Math.max(text.length,1);
+  if(upper>0.3) s.push({t:`⚠ ${Math.round(upper*100)}% CAPS`,c:'sig-w'});
+  const excl=(text.match(/!/g)||[]).length;
+  if(excl>2) s.push({t:`⚠ ${excl}× EXCLAMATION`,c:'sig-w'});
+  const found=SPAM_KW.filter(k=>l.includes(k));
+  if(found.length) s.push({t:`⚠ SPAM KEYWORDS: ${found.slice(0,3).join(', ')}`,c:'sig-w'});
+  if(/\bhi\b|\bhello\b|\bdear\b/i.test(text)) s.push({t:'✓ GREETING',c:'sig-o'});
+  if(/unsubscribe/i.test(text)) s.push({t:'✓ UNSUBSCRIBE LINK',c:'sig-o'});
+  if(text.split(/\s+/).length>20) s.push({t:'ℹ LONG MESSAGE',c:'sig-i'});
+  if(/[.!?]$/.test(text.trim())) s.push({t:'ℹ PROPER PUNCTUATION',c:'sig-i'});
+  return s;
+}
+
+// ── Animate number ────────────────────────────────────────────────
+function animNum(el,from,to,dur,suffix=''){
+  const start=performance.now();
+  (function step(now){
+    const p=Math.min((now-start)/dur,1);
+    el.textContent=Math.round(from+(to-from)*p)+suffix;
+    if(p<1) requestAnimationFrame(step);
+  })(performance.now());
+}
+
+
+// ── Main scan — calls your Flask backend at /predict ──────────────
+// Your Flask app.py must be running: python app.py
+// By default connects to http://localhost:5000/predict
+// Change FLASK_URL below if your server runs on a different host/port.
+const FLASK_URL = 'http://localhost:5000/predict';
+
+const PHRASES=['TOKENIZING INPUT...','EXTRACTING FEATURES...','RUNNING TF-IDF...','APPLYING LINEAR SVM...','COMPUTING PROBABILITIES...','GENERATING REPORT...'];
+let phraseTimer,phraseIdx=0;
+
+async function runScan(){
+  const text=msgInput.value.trim();
+  if(!text) return;
+  const btn=document.getElementById('scan-btn');
+  btn.disabled=true;
+  const lp=document.getElementById('loading-panel');
+  const rp=document.getElementById('result-panel');
+  lp.style.display='flex';rp.style.display='none';rp.innerHTML='';
+  phraseIdx=0;
+  document.getElementById('loadTxt').textContent=PHRASES[0];
+  phraseTimer=setInterval(()=>{phraseIdx=(phraseIdx+1)%PHRASES.length;document.getElementById('loadTxt').textContent=PHRASES[phraseIdx];},550);
+
+  try {
+    // Call your Flask /predict endpoint
+    const res=await fetch(FLASK_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text})
+    });
+    if(!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data=await res.json();
+    // data shape from your app.py:
+    // { prediction, spam_probability, ham_probability, confidence, label }
+    clearInterval(phraseTimer);lp.style.display='none';
+    renderResult(data,text);addToInbox(text,data);
+  } catch(e) {
+    clearInterval(phraseTimer);lp.style.display='none';
+    // Show a clear error — Flask server must be running
+    const rp2=document.getElementById('result-panel');
+    rp2.innerHTML=`
+      <div style="border:1px solid rgba(255,32,64,0.4);border-radius:12px;padding:24px;background:rgba(255,32,64,0.05);animation:fadeUp 0.3s ease">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;color:rgba(255,100,130,0.8);margin-bottom:10px">// CONNECTION ERROR</div>
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:20px;color:var(--r);margin-bottom:10px">⚠ Flask Server Offline</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8">
+          Cannot reach your Flask backend. Make sure it is running:<br><br>
+          <code style="background:rgba(0,0,0,0.4);padding:6px 12px;border-radius:5px;color:var(--b);font-size:11px">python app.py</code><br><br>
+          Then reload this page. Server expected at:<br>
+          <code style="background:rgba(0,0,0,0.4);padding:4px 10px;border-radius:5px;color:var(--g);font-size:11px">${FLASK_URL}</code>
+        </div>
+      </div>`;
+    rp2.style.display='flex';rp2.style.flexDirection='column';rp2.style.gap='14px';
+  }
+  btn.disabled=false;
+}
+
+// ── Render result ─────────────────────────────────────────────────
+function renderResult(data,text){
+  const isSpam=data.prediction==='spam';
+  const sp=Math.round((data.spam_probability||0)*100);
+  const hp=Math.round((data.ham_probability||0)*100);
+  const conf=Math.round((data.confidence||0)*100);
+  const circ=188;
+  const offset=circ-(data.confidence||0)*circ;
+  const color=isSpam?'var(--r)':'var(--g)';
+  const signals=detectSignals(text);
+  const words=text.trim().split(/\s+/).filter(Boolean).length;
+  const upperPct=Math.round((text.match(/[A-Z]/g)||[]).length/Math.max(text.length,1)*100);
+  const excl=(text.match(/!/g)||[]).length;
+  const urls=(text.match(/https?:\/\/\S+|www\.\S+/gi)||[]).length;
+  const rp=document.getElementById('result-panel');
+  const scanTime=new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+  rp.innerHTML=`
+    <div class="verdict-hero ${data.prediction}" style="animation:fadeUp 0.4s ease both">
+      <div class="vh-glow"></div>
+      <div class="vh-top">
+        <div class="vh-badge">${isSpam?'⚡ THREAT DETECTED':'✓ MESSAGE CLEAR'}</div>
+        <div class="vh-time">SCANNED ${scanTime}</div>
+      </div>
+      <div class="vh-main">
+        <div class="vh-icon">${isSpam?'🚨':'✅'}</div>
+        <div class="vh-text">
+          <div class="vh-verdict">${isSpam?'SPAM DETECTED':'LEGITIMATE'}</div>
+          <div class="vh-sub">${isSpam?'High probability spam — exercise caution with links or attachments':'No threat patterns found — message appears genuine'}</div>
+        </div>
+        <div class="conf-ring">
+          <svg width="72" height="72" viewBox="0 0 72 72">
+            <circle cx="36" cy="36" r="30" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="5"/>
+            <circle id="dialArc" cx="36" cy="36" r="30" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${circ}" style="transition:stroke-dashoffset 1s cubic-bezier(.34,1.56,.64,1)"/>
+          </svg>
+          <div class="conf-center">
+            <div class="conf-pct" id="confPct" style="color:${color}">0%</div>
+            <div class="conf-lbl">CONF</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-row" style="animation:fadeUp 0.4s 0.1s ease both;opacity:0;animation-fill-mode:both">
+      <div class="stat-card"><div class="stat-lbl">WORD COUNT</div><div class="stat-val" style="color:var(--b)" id="sv-words">0</div><div class="stat-bar"><div class="stat-bar-fill" data-w="${Math.min(words,100)}" style="background:var(--b)"></div></div></div>
+      <div class="stat-card"><div class="stat-lbl">UPPERCASE %</div><div class="stat-val" style="color:${upperPct>30?'var(--r)':'var(--g)'}" id="sv-upper">0%</div><div class="stat-bar"><div class="stat-bar-fill" data-w="${Math.min(upperPct,100)}" style="background:${upperPct>30?'var(--r)':'var(--g)'}"></div></div></div>
+      <div class="stat-card"><div class="stat-lbl">EXCLAMATIONS</div><div class="stat-val" style="color:${excl>2?'var(--r)':'var(--b)'}" id="sv-excl">0</div><div class="stat-bar"><div class="stat-bar-fill" data-w="${Math.min(excl*10,100)}" style="background:${excl>2?'var(--r)':'var(--b)'}"></div></div></div>
+      <div class="stat-card"><div class="stat-lbl">URLS FOUND</div><div class="stat-val" style="color:${urls>0?'var(--r)':'var(--g)'}" id="sv-urls">0</div><div class="stat-bar"><div class="stat-bar-fill" data-w="${Math.min(urls*25,100)}" style="background:${urls>0?'var(--r)':'var(--g)'}"></div></div></div>
+    </div>
+
+    <div class="prob-section" style="animation:fadeUp 0.4s 0.18s ease both;opacity:0;animation-fill-mode:both">
+      <div class="prob-row">
+        <div class="prob-header">
+          <div class="prob-name"><div class="prob-dot" style="background:var(--r)"></div><span style="color:var(--r)">SPAM PROBABILITY</span></div>
+          <div class="prob-pct" style="color:var(--r)" id="spamPct">0%</div>
+        </div>
+        <div class="prob-track"><div class="prob-fill sf" id="spamBar"></div></div>
+      </div>
+      <div class="prob-row">
+        <div class="prob-header">
+          <div class="prob-name"><div class="prob-dot" style="background:var(--g)"></div><span style="color:var(--g)">HAM PROBABILITY</span></div>
+          <div class="prob-pct" style="color:var(--g)" id="hamPct">0%</div>
+        </div>
+        <div class="prob-track"><div class="prob-fill hf" id="hamBar"></div></div>
+      </div>
+    </div>
+
+    <div class="signals-section" style="animation:fadeUp 0.4s 0.24s ease both;opacity:0;animation-fill-mode:both">
+      <div class="sig-head">// DETECTED THREAT SIGNALS</div>
+      <div class="sig-grid">
+        ${signals.length?signals.map((s,i)=>`<span class="sig-tag ${s.c}" style="animation:tagIn 0.3s ${i*0.04}s ease both;opacity:0;animation-fill-mode:both">${s.t}</span>`).join(''):'<span class="no-sig">// No suspicious signals detected</span>'}
+      </div>
+    </div>
+
+    ${data.analysis?`
+    <div class="analysis-block" style="animation:fadeUp 0.4s 0.3s ease both;opacity:0;animation-fill-mode:both">
+      <div class="ab-head">// AI ANALYSIS</div>
+      <div class="ab-text">${data.analysis}</div>
+    </div>`:''}
+  `;
+
+  rp.style.display='flex';rp.style.flexDirection='column';rp.style.gap='14px';
+
+  setTimeout(()=>{
+    document.getElementById('dialArc').style.strokeDashoffset=offset;
+    animNum(document.getElementById('confPct'),0,conf,900,'%');
+  },150);
+  setTimeout(()=>{
+    animNum(document.getElementById('sv-words'),0,words,700);
+    animNum(document.getElementById('sv-upper'),0,upperPct,700,'%');
+    animNum(document.getElementById('sv-excl'),0,excl,600);
+    animNum(document.getElementById('sv-urls'),0,urls,600);
+    rp.querySelectorAll('.stat-bar-fill').forEach(el=>{el.style.width=el.dataset.w+'%';el.style.transition='width 1s cubic-bezier(.34,1.56,.64,1)';});
+  },300);
+  setTimeout(()=>{
+    document.getElementById('spamBar').style.width=sp+'%';
+    document.getElementById('hamBar').style.width=hp+'%';
+    animNum(document.getElementById('spamPct'),0,sp,900,'%');
+    animNum(document.getElementById('hamPct'),0,hp,900,'%');
+  },200);
+}
+
+// Init
+renderInbox();
+</script>
+</body>
+</html>
