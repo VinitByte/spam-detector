@@ -1,4 +1,3 @@
-
 import pickle, re, os, numpy as np
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -7,7 +6,7 @@ from scipy.sparse import hstack
 app = Flask(__name__)
 CORS(app)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, 'models', 'spam_detector_final.pkl')
 with open(MODEL_PATH, 'rb') as f:
     MODEL = pickle.load(f)
@@ -22,16 +21,22 @@ try:
     from nltk.stem import PorterStemmer
     nltk.download('stopwords', quiet=True)
     STOP_WORDS = set(stopwords.words('english'))
-    STEMMER = PorterStemmer()
-    USE_NLTK = True
-except: 
+    STEMMER    = PorterStemmer()
+    USE_NLTK   = True
+except:
     STOP_WORDS = set()
-    USE_NLTK = False
+    USE_NLTK   = False
 
 SPAM_KEYWORDS = {
     'free','win','winner','prize','claim','cash','urgent',
     'congratulations','selected','click','offer','limited',
     'guarantee','money','earn','income','deal','buy','cheap'
+}
+HAM_KEYWORDS = {
+    'meeting','schedule','report','team','project','conference',
+    'invitation','register','contest','competition','round',
+    'division','rating','programming','university','appointment',
+    'reminder','calendar','noreply','unsubscribe','official'
 }
 
 def preprocess_text(text):
@@ -43,17 +48,9 @@ def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     tokens = text.split()
     if USE_NLTK:
-        tokens = [STEMMER.stem(t) for t in tokens if t not in STOP_WORDS and len(t) > 1]
+        tokens = [STEMMER.stem(t) for t in tokens
+                  if t not in STOP_WORDS and len(t) > 1]
     return ' '.join(tokens)
-
-HAM_KEYWORDS = {
-    'meeting', 'schedule', 'report', 'team', 'project',
-    'conference', 'invitation', 'register', 'contest',
-    'competition', 'round', 'division', 'rating', 'programming',
-    'university', 'college', 'professor', 'assignment',
-    'interview', 'appointment', 'reminder', 'calendar',
-    'noreply', 'unsubscribe', 'official', 'notification'
-}
 
 def extract_features(text):
     return {
@@ -69,7 +66,6 @@ def extract_features(text):
         'spam_keyword_count': sum(1 for kw in SPAM_KEYWORDS if kw in text.lower()),
         'avg_word_length':    np.mean([len(w) for w in text.split()]) if text.split() else 0,
         'sentence_count':     len(re.split(r'[.!?]+', text)),
-        # ── 3 new features added to match the trained scaler ──
         'ham_keyword_count':  sum(1 for kw in HAM_KEYWORDS if kw in text.lower()),
         'has_unsubscribe':    int('unsubscribe' in text.lower()),
         'has_greeting':       int(bool(re.search(r'\bhello\b|\bdear\b|\bhi\b', text.lower()))),
@@ -82,22 +78,18 @@ def predict(text):
     hc_scaled = scaler.transform(hc)
     x         = hstack([tfidf_v, hc_scaled])
     pred      = int(clf.predict(x)[0])
-    try:    spam_prob = float(clf.predict_proba(x)[0][1])
+    try:
+        spam_prob = float(clf.predict_proba(x)[0][1])
     except:
         d = clf.decision_function(x)[0]
         spam_prob = float(1/(1+np.exp(-d)))
-
-    # ── Change this line ──────────────────────────────────
-    threshold = 0.70          # was 0.5, now needs 70% confidence to call spam
+    threshold = 0.70
     pred = 1 if spam_prob > threshold else 0
-    # ─────────────────────────────────────────────────────
-
     return pred, round(spam_prob, 4)
 
-# ── Routes ────────────────────────────────────
 @app.route('/')
 def home():
-    return render_template('index.html')   # ← renders HTML now
+    return render_template('index.html')
 
 @app.route('/predict', methods=['POST'])
 def predict_route():
