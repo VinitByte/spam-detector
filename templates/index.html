@@ -485,7 +485,7 @@ function animNum(el,from,to,dur,suffix=''){
 // Your Flask app.py must be running: python app.py
 // By default connects to http://localhost:5000/predict
 // Change FLASK_URL below if your server runs on a different host/port.
-const FLASK_URL = 'http://localhost:5000/predict';
+const FLASK_URL = '/predict';
 
 const PHRASES=['TOKENIZING INPUT...','EXTRACTING FEATURES...','RUNNING TF-IDF...','APPLYING LINEAR SVM...','COMPUTING PROBABILITIES...','GENERATING REPORT...'];
 let phraseTimer,phraseIdx=0;
